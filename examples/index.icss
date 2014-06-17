@@ -7,3 +7,12 @@ var fontFamily = fontFamily || "Helvetica";
     padding: (bar || 30px) 30px;
     font-family: fontFamily;
 }
+
+textarea{
+    width:100%;
+    height:80px;
+}
+
+textarea.error{
+    background: #FAA;
+}

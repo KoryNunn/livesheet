@@ -1,10 +1,44 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-var renderer = require('../renderer');
+var renderer = require('../renderer'),
+    crel = require('crel');
 
 window.addEventListener('load', function(){
     renderer();
+
+    var textarea;
+
+    crel(document.body,
+        textarea = crel('textarea')
+    );
+
+    textarea.value = '{}';
+
+    textarea.addEventListener('keyup', function(){
+        var newScope;
+        try{
+            newScope = JSON.parse(textarea.value);
+        }catch(e){
+            textarea.classList.add('error');
+            return;
+        }
+        textarea.classList.remove('error');
+        document.querySelector('style').liveSheet.update(newScope);
+    });
+    textarea.addEventListener('keydown', function(event){
+        if(event.which === 9){
+            var selectionStart = this.selectionStart,
+                selectionEnd = this.selectionEnd;
+            event.preventDefault();
+            this.value =
+                this.value.slice(0, selectionStart) +
+                '    ' +
+                this.value.slice(selectionEnd);
+
+            this.setSelectionRange(selectionStart + 4, selectionStart + 4);
+        }
+    });
 });
-},{"../renderer":9}],2:[function(require,module,exports){
+},{"../renderer":9,"crel":4}],2:[function(require,module,exports){
 function floor(scope, args){
     return Math.floor(args.next());
 }
@@ -340,11 +374,11 @@ UnitToken.prototype.parse = function(tokens, position){
     var index = position,
         previousToken = tokens[--index];
 
-    while(previousToken && !(previousToken instanceof DelimiterToken)){
+    while(previousToken && previousToken instanceof DelimiterToken){
         previousToken = tokens[--index];
     }
 
-    this.childTokens = tokens.splice(index+1, position - index - 1);
+    this.childTokens = tokens.splice(index, position - index);
 };
 UnitToken.prototype.evaluate = function(scope){
     for(var i = 0; i < this.childTokens.length; i++){
@@ -355,6 +389,21 @@ UnitToken.prototype.evaluate = function(scope){
 };
 UnitToken.prototype.render = function(scope){
     return compileTokens(this.childTokens) + this.original;
+};
+
+function HexToken(){}
+HexToken = createSpec(HexToken, Token);
+HexToken.tokenPrecedence = 1;
+HexToken.prototype.parsePrecedence = 1;
+HexToken.prototype.name = 'HexToken';
+HexToken.tokenise = function(substring) {
+    var match = substring.match(/^\#[^\s]+/);
+    if(match){
+        return new HexToken(match[0], match[0].length);
+    }
+};
+HexToken.prototype.evaluate = function(scope){
+    this.result = this.original;
 };
 
 function NullToken(){}
@@ -676,7 +725,7 @@ var tokenConverters = [
         MultiplyToken,
         DivideToken,
         AddToken,
-        ModulusToken,
+        //ModulusToken,
         LessThanOrEqualToken,
         LessThanToken,
         GreaterThanOrEqualToken,
@@ -686,7 +735,8 @@ var tokenConverters = [
         IdentifierToken,
         PeriodToken,
         TupleToken,
-        UnitToken
+        UnitToken,
+        HexToken
     ];
 
 var Icss = function(expression){
