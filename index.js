@@ -685,7 +685,7 @@ var tokenConverters = [
         HexToken
     ];
 
-var Icss = function(expression){
+var Icss = function(source, scope){
     var icss = {},
         lang = new Lang();
 
@@ -694,6 +694,8 @@ var Icss = function(expression){
     icss.lang = lang;
     icss.tokenConverters = tokenConverters;
     icss.global = global;
+    icss._source = source;
+    icss._scope = scope;
     icss.tokenise = function(expression){
         return icss.lang.tokenise(expression, icss.tokenConverters);
     }
@@ -717,11 +719,22 @@ var Icss = function(expression){
 
         return result;
     };
-    icss.update = function(injectedScope){
-        this.result = this.evaluate(expression, injectedScope);
+    icss.update = function(){
+        this.result = this.evaluate(this._source, this._scope);
         if(this.render){
             this.render(this.result);
         }
+    };
+    icss.scope = function(injectedScope){
+        this._scope = injectedScope;
+        this.update();
+    };
+    icss.source = function(newSource){
+        if(arguments.length){
+            this._source = newSource;
+            return this;
+        }
+        return this._source;
     };
 
     icss.update();

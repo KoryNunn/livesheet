@@ -2,16 +2,23 @@
 var renderer = require('../renderer'),
     crel = require('crel');
 
-window.addEventListener('load', function(){
-    renderer();
+renderer();
 
-    var textarea;
+window.addEventListener('load', function(){
+    var textarea,
+        liveSheet = document.querySelector('style').liveSheet;
 
     crel(document.body,
         textarea = crel('textarea')
     );
 
-    textarea.value = '{}';
+    var startScope = {
+        bar:'10px',
+        primaryColor: '#F00'
+    };
+
+    textarea.value = JSON.stringify(startScope, null, '    ');
+    liveSheet.scope(startScope);
 
     textarea.addEventListener('keyup', function(){
         var newScope;
@@ -22,8 +29,9 @@ window.addEventListener('load', function(){
             return;
         }
         textarea.classList.remove('error');
-        document.querySelector('style').liveSheet.update(newScope);
+        document.querySelector('style').liveSheet.scope(newScope);
     });
+
     textarea.addEventListener('keydown', function(event){
         if(event.which === 9){
             var selectionStart = this.selectionStart,
@@ -739,7 +747,7 @@ var tokenConverters = [
         HexToken
     ];
 
-var Icss = function(expression){
+var Icss = function(source, scope){
     var icss = {},
         lang = new Lang();
 
@@ -748,6 +756,8 @@ var Icss = function(expression){
     icss.lang = lang;
     icss.tokenConverters = tokenConverters;
     icss.global = global;
+    icss._source = source;
+    icss._scope = scope;
     icss.tokenise = function(expression){
         return icss.lang.tokenise(expression, icss.tokenConverters);
     }
@@ -771,11 +781,22 @@ var Icss = function(expression){
 
         return result;
     };
-    icss.update = function(injectedScope){
-        this.result = this.evaluate(expression, injectedScope);
+    icss.update = function(){
+        this.result = this.evaluate(this._source, this._scope);
         if(this.render){
             this.render(this.result);
         }
+    };
+    icss.scope = function(injectedScope){
+        this._scope = injectedScope;
+        this.update();
+    };
+    icss.source = function(newSource){
+        if(arguments.length){
+            this._source = newSource;
+            return this;
+        }
+        return this._source;
     };
 
     icss.update();
@@ -1493,21 +1514,19 @@ var Icss = require('./'),
     Ajax = require('simple-ajax');
 
 function initSheet(linkTag){
-    var ajax = new Ajax(linkTag.getAttribute('href'));
+    var ajax = new Ajax(linkTag.getAttribute('href')),
+        liveSheet = new Icss();
+
+    liveSheet.element = crel('style');
+    liveSheet.element.liveSheet = liveSheet;
+    liveSheet.render = function(data){
+        this.element.textContent = '\n' + data + '\n';
+    }
+    crel(document.head, liveSheet.element);
 
     ajax.on('success', function(event) {
-        var liveSheet = new Icss(event.target.response);
-        liveSheet.element = crel('style');
-
-        liveSheet.render = function(data){
-            this.element.textContent = '\n' + data + '\n';
-        }
-
-        crel(document.head, liveSheet.element);
-
+        liveSheet.source(event.target.response);
         liveSheet.update();
-
-        liveSheet.element.liveSheet = liveSheet;
     });
 
     ajax.send();

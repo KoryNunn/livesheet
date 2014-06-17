@@ -3,21 +3,19 @@ var Icss = require('./'),
     Ajax = require('simple-ajax');
 
 function initSheet(linkTag){
-    var ajax = new Ajax(linkTag.getAttribute('href'));
+    var ajax = new Ajax(linkTag.getAttribute('href')),
+        liveSheet = new Icss();
+
+    liveSheet.element = crel('style');
+    liveSheet.element.liveSheet = liveSheet;
+    liveSheet.render = function(data){
+        this.element.textContent = '\n' + data + '\n';
+    }
+    crel(document.head, liveSheet.element);
 
     ajax.on('success', function(event) {
-        var liveSheet = new Icss(event.target.response);
-        liveSheet.element = crel('style');
-
-        liveSheet.render = function(data){
-            this.element.textContent = '\n' + data + '\n';
-        }
-
-        crel(document.head, liveSheet.element);
-
+        liveSheet.source(event.target.response);
         liveSheet.update();
-
-        liveSheet.element.liveSheet = liveSheet;
     });
 
     ajax.send();

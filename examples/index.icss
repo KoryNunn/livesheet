@@ -1,9 +1,12 @@
+var primaryColor = primaryColor || #F00;
+var errorColor = errorColor || #FAA;
+
 var foo = bar || 1px;
 
 var fontFamily = fontFamily || "Helvetica";
 
 .things{
-    border: solid foo red;
+    border: solid foo primaryColor;
     padding: (bar || 30px) 30px;
     font-family: fontFamily;
 }
@@ -14,5 +17,5 @@ textarea{
 }
 
 textarea.error{
-    background: #FAA;
+    background: errorColor;
 }

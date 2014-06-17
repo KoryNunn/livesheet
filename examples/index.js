@@ -1,16 +1,23 @@
 var renderer = require('../renderer'),
     crel = require('crel');
 
-window.addEventListener('load', function(){
-    renderer();
+renderer();
 
-    var textarea;
+window.addEventListener('load', function(){
+    var textarea,
+        liveSheet = document.querySelector('style').liveSheet;
 
     crel(document.body,
         textarea = crel('textarea')
     );
 
-    textarea.value = '{}';
+    var startScope = {
+        bar:'10px',
+        primaryColor: '#F00'
+    };
+
+    textarea.value = JSON.stringify(startScope, null, '    ');
+    liveSheet.scope(startScope);
 
     textarea.addEventListener('keyup', function(){
         var newScope;
@@ -21,8 +28,9 @@ window.addEventListener('load', function(){
             return;
         }
         textarea.classList.remove('error');
-        document.querySelector('style').liveSheet.update(newScope);
+        document.querySelector('style').liveSheet.scope(newScope);
     });
+
     textarea.addEventListener('keydown', function(event){
         if(event.which === 9){
             var selectionStart = this.selectionStart,
