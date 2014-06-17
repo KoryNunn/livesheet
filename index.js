@@ -320,11 +320,11 @@ UnitToken.prototype.parse = function(tokens, position){
     var index = position,
         previousToken = tokens[--index];
 
-    while(previousToken && !(previousToken instanceof DelimiterToken)){
+    while(previousToken && previousToken instanceof DelimiterToken){
         previousToken = tokens[--index];
     }
 
-    this.childTokens = tokens.splice(index+1, position - index - 1);
+    this.childTokens = tokens.splice(index, position - index);
 };
 UnitToken.prototype.evaluate = function(scope){
     for(var i = 0; i < this.childTokens.length; i++){
@@ -335,6 +335,21 @@ UnitToken.prototype.evaluate = function(scope){
 };
 UnitToken.prototype.render = function(scope){
     return compileTokens(this.childTokens) + this.original;
+};
+
+function HexToken(){}
+HexToken = createSpec(HexToken, Token);
+HexToken.tokenPrecedence = 1;
+HexToken.prototype.parsePrecedence = 1;
+HexToken.prototype.name = 'HexToken';
+HexToken.tokenise = function(substring) {
+    var match = substring.match(/^\#[^\s]+/);
+    if(match){
+        return new HexToken(match[0], match[0].length);
+    }
+};
+HexToken.prototype.evaluate = function(scope){
+    this.result = this.original;
 };
 
 function NullToken(){}
@@ -656,7 +671,7 @@ var tokenConverters = [
         MultiplyToken,
         DivideToken,
         AddToken,
-        ModulusToken,
+        //ModulusToken,
         LessThanOrEqualToken,
         LessThanToken,
         GreaterThanOrEqualToken,
@@ -666,7 +681,8 @@ var tokenConverters = [
         IdentifierToken,
         PeriodToken,
         TupleToken,
-        UnitToken
+        UnitToken,
+        HexToken
     ];
 
 var Icss = function(expression){
