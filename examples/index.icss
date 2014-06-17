@@ -1,0 +1,9 @@
+var foo = bar || 1px;
+
+var fontFamily = fontFamily || "Helvetica";
+
+.things{
+    border: solid foo red;
+    padding: (bar || 30px) 30px;
+    font-family: fontFamily;
+}

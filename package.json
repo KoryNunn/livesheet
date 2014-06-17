@@ -6,7 +6,9 @@
     "test": "test"
   },
   "dependencies": {
+    "crel": "^1.1.2",
     "lang-js": "^2.0.0",
+    "simple-ajax": "0.0.1",
     "spec-js": "~0.0.3"
   },
   "devDependencies": {

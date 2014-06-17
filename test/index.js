@@ -19,6 +19,6 @@ test("variables in css", function (t) {
 
 test("formatting", function (t) {
 
-  var sheet = fs.readFileSync('test.icss').toString();
+  var sheet = fs.readFileSync(__dirname + '/test.icss').toString();
   console.log(icss.evaluate(sheet));
 });

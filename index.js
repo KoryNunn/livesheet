@@ -4,8 +4,15 @@ var Lang = require('lang-js'),
     createSpec = require('spec-js');
 
 var createNestingParser = Lang.createNestingParser,
-    Token = Lang.Token,
     Scope = Lang.Scope;
+
+function Token(){
+    this.init && this.init();
+}
+Token = createSpec(Token, Lang.Token);
+Token.prototype.render = function(){
+    return this.result;
+};
 
 function isIdentifier(substring){
     var valid = /^[$A-Z_][0-9A-Z_$]*/i,
@@ -60,9 +67,15 @@ function createOpperatorEvaluator(fn) {
     };
 }
 
-function compileTokens(tokens){
+function evaluateTokens(tokens, scope){
+    for(var i = 0; i < tokens.length; i++){
+        tokens[i].evaluate && tokens[i].evaluate(scope);
+    }
+}
+
+function compileTokens(tokens, isSource){
     return tokens.reduce(function(result, token){
-        return result += token.result;
+        return result += token.render(isSource);
     }, '');
 }
 
@@ -96,10 +109,10 @@ StringToken.tokenise = function (substring) {
             index + escapes + 1
         );
     }
-}
+};
 StringToken.prototype.evaluate = function () {
     this.result = this.original;
-}
+};
 
 function ParenthesesCloseToken(){}
 ParenthesesCloseToken = createSpec(ParenthesesCloseToken, Token);
@@ -126,33 +139,41 @@ var parenthesisParser = createNestingParser(ParenthesesCloseToken);
 ParenthesesOpenToken.prototype.parse = function(tokens, position, parse){
     parenthesisParser.apply(this, arguments);
 
-    var previousToken = tokens[position-1];
+    var leftIndex = 0,
+        previousToken;
 
-    if(!previousToken || previousToken instanceof SemicolonToken || previousToken instanceof OpperatorToken){
-        return;
-    }
-
-    tokens.splice(position-1, 1);
-
-    this.previousToken = previousToken;
+    while(previousToken = tokens[position - ++leftIndex],
+        leftIndex < position &&
+        previousToken &&
+        previousToken.parsePrecedence > this.parsePrecedence
+    ){}
+    this.leftTokens = tokens.splice(position - leftIndex, leftIndex);
+    this.leftToken = this.leftTokens[0];
 };
 ParenthesesOpenToken.prototype.evaluate = function(scope){
     for(var i = 0; i < this.childTokens.length; i++){
         this.childTokens[i].evaluate(scope);
     }
 
-    if(this.previousToken){
-        this.previousToken.evaluate(scope);
+    if(this.leftToken && !(this.leftToken instanceof DelimiterToken)){
+        this.leftToken.evaluate(scope);
 
-        if(typeof this.previousToken.result !== 'function'){
-            throw this.previousToken.original + " (" + this.previousToken.result + ")" + " is not a function";
+        if(typeof this.leftToken.result !== 'function'){
+            throw this.leftToken.original + " (" + this.leftToken.result + ")" + " is not a function";
         }
 
-        this.result = scope.callWith(this.previousToken.result, this.childTokens, this);
+        this.result = scope.callWith(this.leftToken.result, this.childTokens, this);
     }else{
         this.result = this.childTokens.slice(-1)[0].result;
     }
 }
+ParenthesesOpenToken.prototype.render = function(){
+    if(this.previousToken){
+        return '';
+    }else{
+        return compileTokens(this.childTokens);
+    }
+};
 
 function BraceCloseToken(){}
 BraceCloseToken = createSpec(BraceCloseToken, Token);
@@ -175,9 +196,9 @@ BraceOpenToken.tokenise = function(substring) {
         return new BraceOpenToken(substring.charAt(0), 1);
     }
 }
-var parenthesisParser = createNestingParser(BraceCloseToken);
+var braceParser = createNestingParser(BraceCloseToken);
 BraceOpenToken.prototype.parse = function(tokens, position, parse){
-    parenthesisParser.apply(this, arguments);
+    braceParser.apply(this, arguments);
 
     var index = 0;
 
@@ -200,8 +221,14 @@ BraceOpenToken.prototype.evaluate = function(scope){
         this.childTokens[i].evaluate(scope);
     }
 
-    this.result = compileTokens(this.selectorTokens) + '{' + compileTokens(this.childTokens) + '}';
-}
+    this.result = undefined;
+};
+BraceOpenToken.prototype.render = function(){
+    if(this.isFunction){
+        return '/*' + compileTokens(this.selectorTokens) + '{' + compileTokens(this.childTokens) + '}' + '*/';
+    }
+    return compileTokens(this.selectorTokens) + '{' + compileTokens(this.childTokens) + '}';
+};
 
 function NumberToken(){}
 NumberToken = createSpec(NumberToken, Token);
@@ -244,7 +271,7 @@ NumberToken.prototype.evaluate = function(scope){
 function SemicolonToken(){}
 SemicolonToken = createSpec(SemicolonToken, Token);
 SemicolonToken.tokenPrecedence = 1;
-SemicolonToken.prototype.parsePrecedence = 6;
+SemicolonToken.prototype.parsePrecedence = 7;
 SemicolonToken.prototype.name = 'SemicolonToken';
 SemicolonToken.tokenise = function(substring) {
     if(substring.charAt(0) === ';'){
@@ -252,25 +279,62 @@ SemicolonToken.tokenise = function(substring) {
     }
 };
 SemicolonToken.prototype.parse = function(tokens, position){
-    var lastPosition = 0;
+    var index = position,
+        previousToken = tokens[--index];
 
-    for(var i = tokens.length - 1 - position; i >=0; i--){
-        if(tokens[i] instanceof SemicolonToken){
-            lastPosition = i;
-            break;
-        }
+    while(previousToken && !(previousToken instanceof SemicolonToken)){
+        previousToken = tokens[--index];
     }
 
-    this.childTokens = tokens.splice(lastPosition, position - lastPosition);
+    this.childTokens = tokens.splice(index+1, position - index - 1);
 };
 SemicolonToken.prototype.evaluate = function(scope){
     for(var i = 0; i < this.childTokens.length; i++){
         this.childTokens[i].evaluate(scope);
     }
 
-    var lastChild = this.childTokens.slice(-1)[0];
+    this.result = this.childTokens[this.childTokens.length - 1].result;
+};
+SemicolonToken.prototype.render = function(scope){
+    var result = compileTokens(this.childTokens);
+    if(!(this.childTokens[this.childTokens.length - 1] instanceof AssignemntToken)){
+        result+= this.original;
+    }
+    return result
+};
 
-    this.result = (lastChild ? lastChild.result : undefined) + this.original;
+function UnitToken(){}
+UnitToken = createSpec(UnitToken, Token);
+UnitToken.tokenPrecedence = 1;
+UnitToken.prototype.parsePrecedence = 1;
+UnitToken.prototype.name = 'UnitToken';
+UnitToken.units = ['px', '%','em','deg','rad'];
+UnitToken.tokenise = function(substring) {
+    for(var i = 0; i < UnitToken.units.length; i++){
+        if(substring.indexOf(UnitToken.units[i]) === 0){
+            return new UnitToken(UnitToken.units[i], UnitToken.units[i].length);
+        }
+    }
+};
+UnitToken.prototype.parse = function(tokens, position){
+    var index = position,
+        previousToken = tokens[--index];
+
+    while(previousToken && !(previousToken instanceof DelimiterToken)){
+        previousToken = tokens[--index];
+    }
+
+    this.childTokens = tokens.splice(index+1, position - index - 1);
+};
+UnitToken.prototype.evaluate = function(scope){
+    for(var i = 0; i < this.childTokens.length; i++){
+        this.childTokens[i].evaluate(scope);
+    }
+
+    this.result = this.childTokens[this.childTokens.length - 1].result + this.original;
+};
+UnitToken.prototype.render = function(scope){
+    return compileTokens(this.childTokens) + this.original;
 };
 
 function NullToken(){}
@@ -316,11 +380,23 @@ VariableToken.prototype.parsePrecedence = 2;
 VariableToken.prototype.name = 'VariableToken';
 VariableToken.tokenise = createKeywordTokeniser(VariableToken, "var");
 VariableToken.prototype.parse = function(tokens, position){
-    this.identifierKey = tokens[position + 1].original;
+    var index = position,
+        nextToken = tokens[++index];
+
+    while(nextToken instanceof DelimiterToken){
+        nextToken = tokens[++index];
+    }
+
+    this.childTokens = tokens.splice(position, index - position);
+
+    this.identifierToken = this.childTokens[this.childTokens.length - 1];
 };
 VariableToken.prototype.evaluate = function(scope){
-    scope.set(this.identifierKey, undefined);
+    scope.set(this.identifierToken.original, undefined);
     this.result = undefined;
+};
+VariableToken.prototype.render = function(scope){
+    return this.original + compileTokens(this.childTokens);
 };
 
 
@@ -339,8 +415,9 @@ DelimiterToken.tokenise = function(substring) {
         return new DelimiterToken(substring.slice(0, i), i);
     }
 };
-DelimiterToken.prototype.evaluate = function(){
-    this.result = this.original;
+DelimiterToken.prototype.evaluate = function(){};
+DelimiterToken.prototype.render = function(){
+    return this.original;
 }
 
 function OpperatorToken(){}
@@ -352,28 +429,37 @@ OpperatorToken.prototype.parse = function(tokens, position){
 
     var leftIndex = 0,
         previousToken;
-    while(previousToken = tokens[position - ++leftIndex], 
-        previousToken && 
+    while(previousToken = tokens[position - ++leftIndex],
+        leftIndex < position &&
+        previousToken &&
         previousToken instanceof DelimiterToken
     ){}
     this.leftTokens = tokens.splice(position - leftIndex, leftIndex);
-    this.leftToken = this.leftTokens.shift();
+    this.leftToken = this.leftTokens[0];
 
     // Just spliced a few things before, need to reset position
     position -= leftIndex;
 
     var rightIndex = 0,
         nextToken;
-    while(nextToken = tokens[++rightIndex + position], 
-        nextToken && 
+    while(nextToken = tokens[++rightIndex + position],
+        nextToken &&
         nextToken instanceof DelimiterToken
     ){}
     this.rightTokens = tokens.splice(position + 1, rightIndex);
-    this.rightToken = this.rightTokens.pop();
+    this.rightToken = this.rightTokens[this.rightTokens.length-1];
+};
+OpperatorToken.prototype.render = function(isSource){
+    if(isSource){
+        return compileTokens(this.leftTokens) + this.original + compileTokens(this.rightTokens);
+    }
+
+    return this.result;
 };
 
 function AssignemntToken(){}
 AssignemntToken = createSpec(AssignemntToken, OpperatorToken);
+AssignemntToken.prototype.parsePrecedence = 6;
 AssignemntToken.prototype.name = 'AssignemntToken';
 AssignemntToken.tokenise = createOpperatorTokeniser(AssignemntToken, '=');
 AssignemntToken.prototype.evaluate = function(scope){
@@ -382,7 +468,9 @@ AssignemntToken.prototype.evaluate = function(scope){
         throw "ReferenceError: Invalid left-hand side in assignment";
     }
     scope.set(this.leftToken.original, this.rightToken.result, true);
-    this.result = '/* ' + this.leftToken.original + this.original + this.rightToken.original + ' */';
+};
+AssignemntToken.prototype.render = function(){
+    return '/* ' + compileTokens(this.leftTokens, true) + this.original + compileTokens(this.rightTokens, true) + ' */';
 };
 
 function MultiplyToken(){}
@@ -465,6 +553,14 @@ AndToken.prototype.evaluate = createOpperatorEvaluator(function(a,b){
     return a && b;
 });
 
+function OrToken(){}
+OrToken = createSpec(OrToken, OpperatorToken);
+OrToken.prototype.name = 'OrToken';
+OrToken.tokenise = createOpperatorTokeniser(OrToken, '||');
+OrToken.prototype.evaluate = createOpperatorEvaluator(function(a,b){
+    return a || b;
+});
+
 function IdentifierToken(){}
 IdentifierToken = createSpec(IdentifierToken, Token);
 IdentifierToken.tokenPrecedence = 3;
@@ -478,73 +574,69 @@ IdentifierToken.tokenise = function(substring){
     }
 };
 IdentifierToken.prototype.evaluate = function(scope){
-    this.result = scope.get(this.original) || this.original;
+    this.result = scope.get(this.original);
+};
+IdentifierToken.prototype.render = function(scope){
+    return this.result || this.original;
 };
 
 function PeriodToken(){}
-PeriodToken = createSpec(PeriodToken, Token);
+PeriodToken = createSpec(PeriodToken, OpperatorToken);
 PeriodToken.prototype.name = 'PeriodToken';
 PeriodToken.tokenPrecedence = 2;
 PeriodToken.prototype.parsePrecedence = 5;
-PeriodToken.tokenise = function(substring){
-    var periodConst = ".";
-    return (substring.charAt(0) === periodConst) ? new PeriodToken(periodConst, 1) : undefined;
-};
-PeriodToken.prototype.parse = function(tokens, position){
-    if(position !== 0){
-        this.targetToken = tokens.splice(position-1,1)[0];
-        this.identifierToken = tokens.splice(position,1)[0];
-    }else{
-        this.identifierToken = tokens.splice(position + 1,1)[0];
-    }
-};
+PeriodToken.tokenise = createOpperatorTokeniser(PeriodToken, '.');
 PeriodToken.prototype.evaluate = function(scope){
-    if(!this.targetToken){
-        this.identifierToken.evaluate(scope);
-        this.result = '.' + this.identifierToken.result;
-        return;
-    }
-
-    this.targetToken.evaluate(scope);
-
     if(
-        this.targetToken.result &&
-        (typeof this.targetToken.result === 'object' || typeof this.targetToken.result === 'function')
-        && this.targetToken.result.hasOwnProperty(this.identifierToken.original)
+        (typeof this.leftToken.result === 'object' || typeof this.leftToken.result === 'function') &&
+        this.leftToken.result.hasOwnProperty(this.rightToken.original)
     ){
-        this.result = this.targetToken.result[this.identifierToken.original];
-    }else{
-        this.identifierToken.evaluate(scope);
-        this.result = this.targetToken.result + '.' + this.identifierToken.result;
+        this.result = this.leftToken.result[this.rightToken.original];
     }
+};
+PeriodToken.prototype.render = function(scope){
+    return compileTokens(this.leftTokens) + this.original + compileTokens(this.rightTokens);
 };
 
 function TupleToken(){}
-TupleToken = createSpec(TupleToken, Token);
+TupleToken = createSpec(TupleToken, OpperatorToken);
 TupleToken.prototype.name = 'TupleToken';
 TupleToken.tokenPrecedence = 2;
 TupleToken.prototype.parsePrecedence = 5;
-TupleToken.tokenise = function(substring){
-    var tupleConst = ":";
-    return (substring.charAt(0) === tupleConst) ? new TupleToken(tupleConst, 1) : undefined;
-};
+TupleToken.tokenise = createOpperatorTokeniser(TupleToken, ':');
 TupleToken.prototype.parse = function(tokens, position){
-    this.propertyToken = tokens.splice(position-1,1)[0];
 
-    var index = 0;
+    var leftIndex = 0,
+        previousToken;
+    while(previousToken = tokens[position - ++leftIndex],
+        leftIndex < position &&
+        previousToken &&
+        previousToken instanceof DelimiterToken
+    ){}
+    this.leftTokens = tokens.splice(position - leftIndex, leftIndex);
+    this.leftToken = this.leftTokens[0];
 
-    while(!(tokens[++index + position] instanceof SemicolonToken)){}
+    // Just spliced a few things before, need to reset position
+    position -= leftIndex;
 
-    this.valueTokens = tokens.splice(position, index);
+    var rightIndex = 0,
+        nextToken;
+    while(nextToken = tokens[++rightIndex + position],
+        nextToken &&
+        !(nextToken instanceof SemicolonToken)
+    ){}
+    this.rightTokens = tokens.splice(position + 1, rightIndex - 1);
+    this.rightToken = this.rightTokens[this.rightTokens.length-1];
 };
 TupleToken.prototype.evaluate = function(scope){
-    this.propertyToken.evaluate(scope);
+    evaluateTokens(this.leftTokens, scope);
+    evaluateTokens(this.rightTokens, scope);
 
-    for(var i = 0; i < this.valueTokens.length; i++){
-        this.valueTokens[i].evaluate(scope);
-    }
-
-    this.result = this.propertyToken.result + ':' + compileTokens(this.valueTokens);
+    this.result = {};
+    this.result[this.leftToken.result] = this.rightToken.result;
+};
+TupleToken.prototype.render = function(scope){
+    return compileTokens(this.leftTokens) + ':' + compileTokens(this.rightTokens);
 };
 
 var tokenConverters = [
@@ -570,14 +662,18 @@ var tokenConverters = [
         GreaterThanOrEqualToken,
         GreaterThanToken,
         AndToken,
+        OrToken,
         IdentifierToken,
         PeriodToken,
-        TupleToken
+        TupleToken,
+        UnitToken
     ];
 
-var Icss = function(){
+var Icss = function(expression){
     var icss = {},
         lang = new Lang();
+
+    icss.Token = Token;
 
     icss.lang = lang;
     icss.tokenConverters = tokenConverters;
@@ -592,8 +688,27 @@ var Icss = function(){
 
         var tokens = lang.evaluate(expression, scope, tokenConverters, true);
 
-        return compileTokens(tokens);
+        var result = '';
+
+        if(injectedScope){
+            result += '\n\/* ';
+            result += 'Current scope: \n\n';
+            result += JSON.stringify(injectedScope, null, '    ');
+            result += '\n\n*\/\n\n';
+        }
+
+        result += compileTokens(tokens);
+
+        return result;
     };
+    icss.update = function(injectedScope){
+        this.result = this.evaluate(expression, injectedScope);
+        if(this.render){
+            this.render(this.result);
+        }
+    };
+
+    icss.update();
 
     return icss;
 };
