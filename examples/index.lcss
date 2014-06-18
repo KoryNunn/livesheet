@@ -1,5 +1,5 @@
 
-var primaryColor = primaryColor || #F00;
+var primaryColor = primaryColor || #3AF;
 var errorColor = errorColor || #FAA;
 
 var foo = bar || 1px;
@@ -11,6 +11,15 @@ var fontFamily = fontFamily || "Helvetica";
 
 function Foo(){
     return px(min(400 max(200 whatsits)));
+}
+
+body{
+    font-family: Josefin Sans;
+    font-size: 20px;
+}
+
+h1{
+    font-size: 50px;
 }
 
 .things{

@@ -18,7 +18,7 @@ window.addEventListener('load', function(){
 
     var startScopeSource = "{\n" +
         "    bar:'10px',\n" +
-        "    primaryColor: '#F00',\n" +
+        "    primaryColor: '#3AF',\n" +
         "    whatsits: '0px',\n" +
         "    Bar: function(){\n" +
         "        return window.innerWidth / 3 + 'px';\n" +
