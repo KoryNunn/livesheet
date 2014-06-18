@@ -4,7 +4,7 @@ Live css with dynamic variables, real functions, and other cool stuff.
 
 ## Totally experimental, mostly doesn't work.
 
-Demo here: http://korynunn.github.io/icss/examples/
+Demo here: http://korynunn.github.io/livesheet/examples/
 
 Uses .lcss files
 
