@@ -12,18 +12,29 @@ window.addEventListener('load', function(){
         textarea = crel('textarea')
     );
 
-    var startScope = {
-        bar:'10px',
-        primaryColor: '#F00'
-    };
+    /*
+        EXTREMELY DODGY DEMO STUFF BELOW
+    */
 
-    textarea.value = JSON.stringify(startScope, null, '    ');
+    var startScopeSource = "{\n" +
+        "    bar:'10px',\n" +
+        "    primaryColor: '#F00',\n" +
+        "    whatsits: '0px',\n" +
+        "    Bar: function(){\n" +
+        "        return window.innerWidth / 3 + 'px';\n" +
+        "    }\n" +
+        "}",
+        startScope;
+
+    eval('startScope =' + startScopeSource);
+
+    textarea.value = startScopeSource;
     liveSheet.scope(startScope);
 
     textarea.addEventListener('keyup', function(){
         var newScope;
         try{
-            newScope = JSON.parse(textarea.value);
+            newScope = eval('newScope =' + textarea.value);
         }catch(e){
             textarea.classList.add('error');
             return;
@@ -47,17 +58,26 @@ window.addEventListener('load', function(){
     });
 });
 },{"../renderer":9,"crel":4}],2:[function(require,module,exports){
-function floor(scope, args){
-    return Math.floor(args.next());
+var arrayProto = [];
+
+function max(){
+    return Math.max.apply(Math, arrayProto.map.call(arguments, parseFloat));
 }
 
-function random(scope, args){
-    return Math.random();
+function min(){
+    return Math.min.apply(Math, arrayProto.map.call(arguments, parseFloat));
+}
+
+function px(value){
+    return value + 'px';
 }
 
 module.exports = {
-    floor: floor,
-    random: random
+    floor: Math.floor,
+    random: Math.random,
+    max: max,
+    min: min,
+    px: px
 };
 },{}],3:[function(require,module,exports){
 var Lang = require('lang-js'),
@@ -176,6 +196,37 @@ StringToken.prototype.evaluate = function () {
     this.result = this.original;
 };
 
+function BlockCommentToken(){}
+BlockCommentToken = createSpec(BlockCommentToken, Token);
+BlockCommentToken.tokenPrecedence = 1;
+BlockCommentToken.prototype.parsePrecedence = 1;
+BlockCommentToken.prototype.name = 'BlockCommentToken';
+BlockCommentToken.tokenise = function (substring) {
+    var close = '*/';
+
+    if(substring.slice(0,2) !== '/*'){
+        return;
+    }
+
+    var index = 0;
+
+    while (substring.slice(++index,index + 2) !== close)
+    {
+       if(index >= substring.length){
+            throw "Unclosed " + this.name;
+       }
+    }
+
+    return new this(
+        substring.slice(0, index+2),
+        index + 2
+    );
+};
+BlockCommentToken.prototype.evaluate = function(){};
+BlockCommentToken.prototype.render = function(){
+    return this.original;
+};
+
 function ParenthesesCloseToken(){}
 ParenthesesCloseToken = createSpec(ParenthesesCloseToken, Token);
 ParenthesesCloseToken.tokenPrecedence = 1;
@@ -224,14 +275,33 @@ ParenthesesOpenToken.prototype.evaluate = function(scope){
             throw this.leftToken.original + " (" + this.leftToken.result + ")" + " is not a function";
         }
 
-        this.result = scope.callWith(this.leftToken.result, this.childTokens, this);
+        var args = this.childTokens.reduce(function(results, childToken){
+            if(childToken instanceof DelimiterToken){
+                return results;
+            }
+
+            childToken.evaluate && childToken.evaluate(scope);
+
+            results.push(childToken.result);
+
+            return results;
+        }, []);
+
+        if(this.leftToken.result.__isFunctionExpression__){
+            this.result = scope.callWith(this.leftToken.result, args, this);
+        }else{
+            this.result = this.leftToken.result.apply(null, args);
+        }
     }else{
         this.result = this.childTokens.slice(-1)[0].result;
     }
 }
-ParenthesesOpenToken.prototype.render = function(){
-    if(this.previousToken){
-        return '';
+ParenthesesOpenToken.prototype.render = function(isSource){
+    if(isSource){
+        return compileTokens(this.childTokens, true);
+    }
+    if(this.leftToken){
+        return this.result;
     }else{
         return compileTokens(this.childTokens);
     }
@@ -262,11 +332,19 @@ var braceParser = createNestingParser(BraceCloseToken);
 BraceOpenToken.prototype.parse = function(tokens, position, parse){
     braceParser.apply(this, arguments);
 
-    var index = 0;
+    var index = 0,
+        currentToken;
 
-    while(tokens[position - ++index] && !(tokens[position - ++index] instanceof SemicolonToken)){}
+    while(
+        currentToken = tokens[position - ++index],
+        currentToken &&
+        !(currentToken instanceof SemicolonToken) &&
+        !(currentToken instanceof FunctionToken) &&
+        !(currentToken instanceof ParenthesesOpenToken) &&
+        !(currentToken instanceof BraceOpenToken)
+    ){}
 
-    this.selectorTokens = parse(tokens.splice(position - index + 1, index - 1));
+    this.selectorTokens = parse(tokens.splice(position - index + 1, index -1));
 };
 BraceOpenToken.prototype.evaluate = function(scope){
     for(var i = 0; i < this.selectorTokens.length; i++){
@@ -277,10 +355,15 @@ BraceOpenToken.prototype.evaluate = function(scope){
     }
 
     for(var i = 0; i < this.childTokens.length; i++){
+        var childToken = this.childTokens[i];
         if(!this.childTokens[i].evaluate){
             continue;
         }
-        this.childTokens[i].evaluate(scope);
+        childToken.evaluate(scope);
+        if(childToken.returned){
+            this.result = childToken.result;
+            return;
+        }
     }
 
     this.result = undefined;
@@ -355,6 +438,10 @@ SemicolonToken.prototype.evaluate = function(scope){
         this.childTokens[i].evaluate(scope);
     }
 
+    if(this.childTokens[this.childTokens.length-1] instanceof ReturnToken){
+        this.returned = true;
+    }
+
     this.result = this.childTokens[this.childTokens.length - 1].result;
 };
 SemicolonToken.prototype.render = function(scope){
@@ -372,31 +459,13 @@ UnitToken.prototype.parsePrecedence = 1;
 UnitToken.prototype.name = 'UnitToken';
 UnitToken.units = ['px', '%','em','deg','rad'];
 UnitToken.tokenise = function(substring) {
-    for(var i = 0; i < UnitToken.units.length; i++){
-        if(substring.indexOf(UnitToken.units[i]) === 0){
-            return new UnitToken(UnitToken.units[i], UnitToken.units[i].length);
-        }
+    var match = substring.match(/^([0-9]+(?:px|%|em|deg|rad))/);
+    if(match){
+        return new UnitToken(match[0], match[0].length);
     }
-};
-UnitToken.prototype.parse = function(tokens, position){
-    var index = position,
-        previousToken = tokens[--index];
-
-    while(previousToken && previousToken instanceof DelimiterToken){
-        previousToken = tokens[--index];
-    }
-
-    this.childTokens = tokens.splice(index, position - index);
 };
 UnitToken.prototype.evaluate = function(scope){
-    for(var i = 0; i < this.childTokens.length; i++){
-        this.childTokens[i].evaluate(scope);
-    }
-
-    this.result = this.childTokens[this.childTokens.length - 1].result + this.original;
-};
-UnitToken.prototype.render = function(scope){
-    return compileTokens(this.childTokens) + this.original;
+    this.result = this.original;
 };
 
 function HexToken(){}
@@ -405,7 +474,7 @@ HexToken.tokenPrecedence = 1;
 HexToken.prototype.parsePrecedence = 1;
 HexToken.prototype.name = 'HexToken';
 HexToken.tokenise = function(substring) {
-    var match = substring.match(/^\#[^\s]+/);
+    var match = substring.match(/^(\#[A-Fa-f0-9]+)/);
     if(match){
         return new HexToken(match[0], match[0].length);
     }
@@ -716,12 +785,126 @@ TupleToken.prototype.render = function(scope){
     return compileTokens(this.leftTokens) + ':' + compileTokens(this.rightTokens);
 };
 
+function FunctionToken(){}
+FunctionToken = createSpec(FunctionToken, Token);
+FunctionToken.prototype.name = 'FunctionToken';
+FunctionToken.tokenPrecedence = 2;
+FunctionToken.prototype.parsePrecedence = 5;
+FunctionToken.tokenise = createKeywordTokeniser(FunctionToken, 'function');
+FunctionToken.prototype.parse = function(tokens, position){
+    var index = 0,
+        currentToken;
+    while(currentToken = tokens[++index + position], currentToken && !(currentToken instanceof BraceOpenToken)){}
+
+    this.childTokens = tokens.splice(position+1, index);
+
+    for(var i = 0; i < this.childTokens.length; i++){
+        var childToken = this.childTokens[i];
+        if(childToken instanceof DelimiterToken){
+            continue;
+        }
+
+        if(childToken instanceof ParenthesesOpenToken){
+            if(this.parametersToken){
+                throw "Unexpected identifier: " + childToken.original;
+            }
+            this.parametersToken = childToken;
+            continue;
+        }
+
+        if(childToken instanceof BraceOpenToken){
+            if(this.bodyToken){
+                throw "Unexpected identifier: " + childToken.original;
+            }
+            this.bodyToken = childToken;
+            continue;
+        }
+    }
+};
+FunctionToken.prototype.evaluate = function(scope){
+    var functionToken = this;
+
+    var parameterNames = [];
+
+    for (var i = 0; i < this.parametersToken.childTokens.length; i++){
+        var parameterToken = this.parametersToken.childTokens[i];
+        if(parameterToken instanceof DelimiterToken){
+            continue;
+        }
+        if(parameterToken instanceof IdentifierToken){
+            parameterNames.push(parameterToken.original);
+            continue;
+        }
+        throw "Unexpected identifier: " + parameterToken.original;
+    }
+
+    this.result = function(scope, args){
+        scope = new Scope(scope);
+
+        for(var i = 0; i < parameterNames.length; i++){
+            var parameterToken = args.getRaw(i, true);
+            scope.set(parameterNames[i].original, parameterToken);
+        }
+
+        functionToken.bodyToken.evaluate(scope);
+
+        return functionToken.bodyToken.result;
+    };
+    this.result.__isFunctionExpression__ = true;
+
+    if(this.parametersToken.leftToken){
+        scope.set(this.parametersToken.leftToken.original, this.result);
+    }
+};
+FunctionToken.prototype.render = function(){
+
+    return '/* Function... */';
+
+    //ToDo: fix when source rendering is implemented
+    // return '/*' +
+    //     'function' +
+    //     (this.nameToken ? this.nameToken.render(true) : '') +
+    //     this.parametersToken.render(true) +
+    //     this.bodyToken.render(true) +
+    //     '*/';
+};
+
+function ReturnToken(){}
+ReturnToken = createSpec(ReturnToken, Token);
+ReturnToken.prototype.name = 'ReturnToken';
+ReturnToken.tokenPrecedence = 2;
+ReturnToken.prototype.parsePrecedence = 6;
+ReturnToken.tokenise = createKeywordTokeniser(ReturnToken, 'return');
+ReturnToken.prototype.parse = function(tokens, position){
+    var index = 0,
+        currentToken;
+    while(currentToken = tokens[++index + position], currentToken && !(currentToken instanceof SemicolonToken)){}
+
+    this.childTokens = tokens.splice(position+1, index-1);
+};
+ReturnToken.prototype.evaluate = function(scope){
+    var lastValue;
+
+    for(var i = 0; i < this.childTokens.length; i++){
+        var childToken = this.childTokens[i];
+        childToken.evaluate && childToken.evaluate(scope);
+        if(!(childToken instanceof DelimiterToken)){
+            lastValue = childToken;
+        }
+    }
+
+    this.result = lastValue.result;
+};
+
 var tokenConverters = [
         StringToken,
+        BlockCommentToken,
         ParenthesesOpenToken,
         ParenthesesCloseToken,
         BraceOpenToken,
         BraceCloseToken,
+        UnitToken,
+        HexToken,
         NumberToken,
         SemicolonToken,
         NullToken,
@@ -740,28 +923,28 @@ var tokenConverters = [
         GreaterThanToken,
         AndToken,
         OrToken,
+        FunctionToken,
+        ReturnToken,
         IdentifierToken,
         PeriodToken,
-        TupleToken,
-        UnitToken,
-        HexToken
+        TupleToken
     ];
 
-var Icss = function(source, scope){
-    var icss = {},
+var LiveSheet = function(source, scope){
+    var liveSheet = {},
         lang = new Lang();
 
-    icss.Token = Token;
+    liveSheet.Token = Token;
 
-    icss.lang = lang;
-    icss.tokenConverters = tokenConverters;
-    icss.global = global;
-    icss._source = source;
-    icss._scope = scope;
-    icss.tokenise = function(expression){
-        return icss.lang.tokenise(expression, icss.tokenConverters);
+    liveSheet.lang = lang;
+    liveSheet.tokenConverters = tokenConverters;
+    liveSheet.global = global;
+    liveSheet._source = source;
+    liveSheet._scope = scope;
+    liveSheet.tokenise = function(expression){
+        return liveSheet.lang.tokenise(expression, liveSheet.tokenConverters);
     }
-    icss.evaluate = function(expression, injectedScope){
+    liveSheet.evaluate = function(expression, injectedScope){
         var scope = new Lang.Scope();
 
         scope.add(this.global).add(injectedScope);
@@ -781,17 +964,17 @@ var Icss = function(source, scope){
 
         return result;
     };
-    icss.update = function(){
+    liveSheet.update = function(){
         this.result = this.evaluate(this._source, this._scope);
         if(this.render){
             this.render(this.result);
         }
     };
-    icss.scope = function(injectedScope){
+    liveSheet.scope = function(injectedScope){
         this._scope = injectedScope;
         this.update();
     };
-    icss.source = function(newSource){
+    liveSheet.source = function(newSource){
         if(arguments.length){
             this._source = newSource;
             return this;
@@ -799,12 +982,12 @@ var Icss = function(source, scope){
         return this._source;
     };
 
-    icss.update();
+    liveSheet.update();
 
-    return icss;
+    return liveSheet;
 };
 
-module.exports = Icss;
+module.exports = LiveSheet;
 },{"./global":2,"lang-js":5,"spec-js":8}],4:[function(require,module,exports){
 //Copyright (C) 2012 Kory Nunn
 
@@ -1509,13 +1692,13 @@ function createSpec(child, parent){
 
 module.exports = createSpec;
 },{}],9:[function(require,module,exports){
-var Icss = require('./'),
+var LiveSheet = require('./'),
     crel = require('crel'),
     Ajax = require('simple-ajax');
 
 function initSheet(linkTag){
     var ajax = new Ajax(linkTag.getAttribute('href')),
-        liveSheet = new Icss();
+        liveSheet = new LiveSheet();
 
     liveSheet.element = crel('style');
     liveSheet.element.liveSheet = liveSheet;
@@ -1524,9 +1707,15 @@ function initSheet(linkTag){
     }
     crel(document.head, liveSheet.element);
 
+    function frame(){
+        liveSheet.update();
+        requestAnimationFrame(frame);
+    }
+
     ajax.on('success', function(event) {
         liveSheet.source(event.target.response);
         liveSheet.update();
+        frame();
     });
 
     ajax.send();

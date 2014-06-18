@@ -1,19 +1,28 @@
+
 var primaryColor = primaryColor || #F00;
 var errorColor = errorColor || #FAA;
 
 var foo = bar || 1px;
+var whatsits = whatsits || 0px;
 
 var fontFamily = fontFamily || "Helvetica";
+
+
+
+function Foo(){
+    return px(min(400 max(200 whatsits)));
+}
 
 .things{
     border: solid foo primaryColor;
     padding: (bar || 30px) 30px;
     font-family: fontFamily;
+    height: (Bar || Foo)();
 }
 
 textarea{
     width:100%;
-    height:80px;
+    height:400px;
 }
 
 textarea.error{

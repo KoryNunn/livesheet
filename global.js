@@ -1,12 +1,21 @@
-function floor(scope, args){
-    return Math.floor(args.next());
+var arrayProto = [];
+
+function max(){
+    return Math.max.apply(Math, arrayProto.map.call(arguments, parseFloat));
 }
 
-function random(scope, args){
-    return Math.random();
+function min(){
+    return Math.min.apply(Math, arrayProto.map.call(arguments, parseFloat));
+}
+
+function px(value){
+    return value + 'px';
 }
 
 module.exports = {
-    floor: floor,
-    random: random
+    floor: Math.floor,
+    random: Math.random,
+    max: max,
+    min: min,
+    px: px
 };

@@ -11,18 +11,29 @@ window.addEventListener('load', function(){
         textarea = crel('textarea')
     );
 
-    var startScope = {
-        bar:'10px',
-        primaryColor: '#F00'
-    };
+    /*
+        EXTREMELY DODGY DEMO STUFF BELOW
+    */
 
-    textarea.value = JSON.stringify(startScope, null, '    ');
+    var startScopeSource = "{\n" +
+        "    bar:'10px',\n" +
+        "    primaryColor: '#F00',\n" +
+        "    whatsits: '0px',\n" +
+        "    Bar: function(){\n" +
+        "        return window.innerWidth / 3 + 'px';\n" +
+        "    }\n" +
+        "}",
+        startScope;
+
+    eval('startScope =' + startScopeSource);
+
+    textarea.value = startScopeSource;
     liveSheet.scope(startScope);
 
     textarea.addEventListener('keyup', function(){
         var newScope;
         try{
-            newScope = JSON.parse(textarea.value);
+            newScope = eval('newScope =' + textarea.value);
         }catch(e){
             textarea.classList.add('error');
             return;

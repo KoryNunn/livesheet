@@ -1,23 +1,17 @@
-# ~~ICSS~~
-
-Probably gona change the name to:
-
 # Livesheet.js
 
-Live css with dynamic variables.
+Live css with dynamic variables, real functions, and other cool stuff.
 
-## Totally experimental, doesn't work.
+## Totally experimental, mostly doesn't work.
 
 Demo here: http://korynunn.github.io/icss/examples/
 
-Uses ~~.icss~~
-
-Probably going to change to .lcss
+Uses .lcss files
 
 ## Plans
 
-Live evaluated variables (kinda working)
-Actual functions
+Live evaluated variables (mostly working)
+Actual functions (kinda working)
 More javascript-like
 node-like require('./thing')
 

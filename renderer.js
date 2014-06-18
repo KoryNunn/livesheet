@@ -1,10 +1,10 @@
-var Icss = require('./'),
+var LiveSheet = require('./'),
     crel = require('crel'),
     Ajax = require('simple-ajax');
 
 function initSheet(linkTag){
     var ajax = new Ajax(linkTag.getAttribute('href')),
-        liveSheet = new Icss();
+        liveSheet = new LiveSheet();
 
     liveSheet.element = crel('style');
     liveSheet.element.liveSheet = liveSheet;
@@ -13,9 +13,15 @@ function initSheet(linkTag){
     }
     crel(document.head, liveSheet.element);
 
+    function frame(){
+        liveSheet.update();
+        requestAnimationFrame(frame);
+    }
+
     ajax.on('success', function(event) {
         liveSheet.source(event.target.response);
         liveSheet.update();
+        frame();
     });
 
     ajax.send();
